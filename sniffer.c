@@ -275,29 +275,129 @@ static int set_option(pcap_t *pcap, int result, const char *name)
     return 0;
 }
 
+/*
+ * Liệt kê tất cả card mạng, hiển thị thông tin chi tiết và cho phép
+ * người dùng chọn tương tác. Trả về tên interface được chọn.
+ * Caller chịu trách nhiệm giải phóng danh sách bằng pcap_freealldevs().
+ */
+static const char *select_interface(pcap_if_t **out_alldevs)
+{
+    char errbuf[PCAP_ERRBUF_SIZE] = {0};
+    pcap_if_t *alldevs;
+
+    if (pcap_findalldevs(&alldevs, errbuf) == PCAP_ERROR) {
+        fprintf(stderr, "pcap_findalldevs failed: %s\n", errbuf);
+        return NULL;
+    }
+
+    if (alldevs == NULL) {
+        fprintf(stderr, "No network interfaces found.\n"
+                        "Make sure you have root privileges.\n");
+        return NULL;
+    }
+
+    printf("\n========================================\n");
+    printf("  Available Network Interfaces\n");
+    printf("========================================\n");
+
+    int count = 0;
+    for (pcap_if_t *dev = alldevs; dev != NULL; dev = dev->next) {
+        ++count;
+        printf("\n  [%d] %s\n", count, dev->name);
+
+        /* Hiển thị mô tả nếu có. */
+        if (dev->description != NULL) {
+            printf("      Description : %s\n", dev->description);
+        }
+
+        /* Hiển thị trạng thái loopback/up/running. */
+        printf("      Flags       :");
+        if (dev->flags & PCAP_IF_LOOPBACK) {
+            printf(" LOOPBACK");
+        }
+        if (dev->flags & PCAP_IF_UP) {
+            printf(" UP");
+        }
+        if (dev->flags & PCAP_IF_RUNNING) {
+            printf(" RUNNING");
+        }
+        putchar('\n');
+
+        /* Hiển thị địa chỉ IP gắn với interface. */
+        for (pcap_addr_t *addr = dev->addresses; addr != NULL; addr = addr->next) {
+            if (addr->addr == NULL) {
+                continue;
+            }
+
+            if (addr->addr->sa_family == AF_INET) {
+                char ip[INET_ADDRSTRLEN];
+                struct sockaddr_in *sin =
+                    (struct sockaddr_in *)addr->addr;
+
+                if (inet_ntop(AF_INET, &sin->sin_addr, ip, sizeof(ip)) != NULL) {
+                    printf("      IPv4        : %s\n", ip);
+                }
+            } else if (addr->addr->sa_family == AF_INET6) {
+                char ip6[INET6_ADDRSTRLEN];
+                struct sockaddr_in6 *sin6 =
+                    (struct sockaddr_in6 *)addr->addr;
+
+                if (inet_ntop(AF_INET6, &sin6->sin6_addr, ip6, sizeof(ip6)) != NULL) {
+                    printf("      IPv6        : %s\n", ip6);
+                }
+            }
+        }
+    }
+
+    printf("\n========================================\n");
+    printf("Select interface [1-%d]: ", count);
+    fflush(stdout);
+
+    int choice = 0;
+    if (scanf("%d", &choice) != 1 || choice < 1 || choice > count) {
+        fprintf(stderr, "Invalid selection.\n");
+        pcap_freealldevs(alldevs);
+        return NULL;
+    }
+
+    /* Dịch chuyển tới interface được chọn. */
+    pcap_if_t *selected = alldevs;
+    for (int i = 1; i < choice; ++i) {
+        selected = selected->next;
+    }
+
+    printf("\n  => Capturing on: %s\n\n", selected->name);
+    *out_alldevs = alldevs;
+    return selected->name;
+}
+
 int main(int argc, char **argv)
 {
     char errbuf[PCAP_ERRBUF_SIZE] = {0};
+    pcap_if_t *alldevs = NULL;
+    const char *ifname = NULL;
 
-    if (argc != 2) {
-        fprintf(
-            stderr,
-            "Usage: %s <network-interface>\nExample: %s eth0\n",
-            argv[0],
-            argv[0]
-        );
-        return EXIT_FAILURE;
+    if (argc >= 2) {
+        /* Truyền tên interface trực tiếp qua dòng lệnh (tương thích ngược). */
+        ifname = argv[1];
+    } else {
+        /* Không có tham số: hiển thị menu chọn card mạng tương tác. */
+        ifname = select_interface(&alldevs);
+
+        if (ifname == NULL) {
+            return EXIT_FAILURE;
+        }
     }
 
-    pcap_t *pcap = pcap_create(argv[1], errbuf);
+    pcap_t *pcap = pcap_create(ifname, errbuf);
 
     if (pcap == NULL) {
-        fprintf(
-            stderr,
-            "pcap_create(%s) failed: %s\n",
-            argv[1],
-            errbuf
-        );
+        fprintf(stderr, "pcap_create(%s) failed: %s\n", ifname, errbuf);
+
+        if (alldevs != NULL) {
+            pcap_freealldevs(alldevs);
+        }
+
         return EXIT_FAILURE;
     }
 
@@ -373,8 +473,14 @@ int main(int argc, char **argv)
         return EXIT_FAILURE;
     }
 
+    /* alldevs không còn cần thiết sau khi pcap đã được tạo. */
+    if (alldevs != NULL) {
+        pcap_freealldevs(alldevs);
+        alldevs = NULL;
+    }
+
     g_handle = pcap;
-    printf("Capturing on %s. Press Ctrl+C to stop.\n", argv[1]);
+    printf("Capturing on %s. Press Ctrl+C to stop.\n", ifname);
 
     int loop_result = pcap_loop(pcap, -1, packet_handler, NULL);
     g_handle = NULL;
