@@ -1,4 +1,4 @@
-﻿#define _DEFAULT_SOURCE
+#define _DEFAULT_SOURCE
 
 #include <arpa/inet.h>
 #include <errno.h>
@@ -15,7 +15,7 @@
 
 #define SNAPLEN 65535
 #define TIMEOUT_MS 1000
-#define HEX_BYTES 16
+#define BYTES_PER_ROW 16
 
 static pcap_t *g_handle;
 static volatile sig_atomic_t g_stop;
@@ -40,19 +40,33 @@ static void print_mac(const uint8_t *mac)
 
 static void print_payload(const u_char *payload, size_t length)
 {
-    size_t shown = length < HEX_BYTES ? length : HEX_BYTES;
-
     printf("  Payload: %zu byte(s)", length);
 
-    if (shown > 0U) {
-        printf("; first %zu byte(s):", shown);
+    if (length == 0U) {
+        putchar('\n');
+        return;
+    }
 
-        for (size_t i = 0; i < shown; ++i) {
-            printf(" %02x", payload[i]);
+    printf("\n");
+
+    for (size_t i = 0; i < length; ++i) {
+        /* In offset đầu mỗi dòng. */
+        if (i % BYTES_PER_ROW == 0) {
+            printf("    %04zx: ", i);
+        }
+
+        printf("%02x ", payload[i]);
+
+        /* Xuống dòng sau mỗi BYTES_PER_ROW bytes. */
+        if ((i + 1) % BYTES_PER_ROW == 0) {
+            putchar('\n');
         }
     }
 
-    putchar('\n');
+    /* Xuống dòng nếu dòng cuối chưa đầy BYTES_PER_ROW bytes. */
+    if (length % BYTES_PER_ROW != 0) {
+        putchar('\n');
+    }
 }
 
 static int parse_ethernet(
