@@ -1,0 +1,33 @@
+Vai trò: Bạn là một Chuyên gia lập trình hệ thống (System Programmer) và kỹ sư an toàn thông tin với kinh nghiệm chuyên sâu về Linux kernel networking, C/C++ và thư viện libpcap.
+
+Nhiệm vụ: Viết một module C (hoặc C++) thu thập gói tin (packet sniffer) sử dụng thư viện libpcap.
+
+Yêu cầu kỹ thuật (Must-have):
+
+Kiến trúc & Hiệu năng: Vì libpcap trên Linux sử dụng socket AF_PACKET bên dưới, hãy sử dụng các API hiện đại của pcap để tối ưu hiệu năng. Vui lòng sử dụng chuỗi hàm pcap_create(), pcap_set_snaplen(), pcap_set_promisc(), pcap_set_immediate_mode() và pcap_activate() thay vì hàm cũ pcap_open_live().
+
+Luồng thực thi: Sử dụng pcap_loop() với một callback function để xử lý gói tin.
+
+Bóc tách Header (Parsing): Trong hàm callback, hãy viết code bóc tách (parse) các layer cơ bản một cách chuẩn xác bằng các struct mặc định của hệ thống (<net/ethernet.h>, <netinet/ip.h>, <netinet/tcp.h>, <netinet/udp.h>):
+
+Layer 2: Ethernet (Lấy MAC nguồn/đích).
+
+Layer 3: IPv4 (Lấy IP nguồn/đích, bỏ qua IPv6 để code gọn nhẹ nhưng phải có check ether_type).
+
+Layer 4: TCP hoặc UDP (Lấy Port nguồn/đích).
+
+Payload: In ra độ dài của payload hoặc một vài byte đầu dưới dạng Hex.
+
+Xử lý tín hiệu (Signal Handling): Bắt tín hiệu SIGINT (Ctrl+C) để gọi pcap_breakloop() giúp module thoát một cách an toàn và in ra thống kê (pcap_stats()).
+
+Bảo mật & Lỗi: Phải có kiểm tra lỗi (error checking) nghiêm ngặt sau mỗi lần gọi hàm của thư viện, kết hợp dùng bộ đệm errbuf.
+
+Định dạng đầu ra:
+
+Cung cấp toàn bộ mã nguồn trong một file sniffer.c.
+
+Code phải được comment đầy đủ, rõ ràng bằng tiếng Anh hoặc tiếng Việt.
+
+Cung cấp câu lệnh biên dịch (ví dụ: gcc sniffer.c -o sniffer -lpcap).
+
+Không dùng các thư viện bên thứ ba ngoại trừ libc chuẩn và libpcap.

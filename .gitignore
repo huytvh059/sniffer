@@ -1,0 +1,10 @@
+﻿# Biên dịch binary
+sniffer
+*.o
+*.exe
+
+# Python Cache & Virtual Env
+__pycache__/
+*.pyc
+.venv/
+venv/
